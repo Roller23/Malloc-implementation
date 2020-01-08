@@ -1,2 +1,2 @@
-# Malloc-implementation
-A primitive implementation of the malloc function family
+# Malloc implementation
+A simple implementation of the malloc function family
