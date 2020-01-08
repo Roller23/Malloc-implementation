@@ -12,10 +12,10 @@
 #define PAGE_SIZE (4 * KB)
 #define SBRK_FAIL ((void *)-1)
 #define HEADER_SIZE sizeof(chunk_t)
-#define mem2block(mem) ((chunk_t *)((char *)(mem) - HEADER_SIZE))
-#define block2mem(block) ((void *)((char *)(block) + HEADER_SIZE))
-#define firstblock() ((chunk_t *)heap.data)
-#define nextblock(block) ((chunk_t *)((char *)(block) + (block)->size + HEADER_SIZE))
+#define mem2chunk(mem) ((chunk_t *)((char *)(mem) - HEADER_SIZE))
+#define chunk2mem(chunk) ((void *)((char *)(chunk) + HEADER_SIZE))
+#define firstchunk() ((chunk_t *)heap.data)
+#define nextchunk(chunk) ((chunk_t *)((char *)(chunk) + (chunk)->size + HEADER_SIZE))
 
 #define MIN(A, B) ((A) < (B) ? (A) : (B))
 
@@ -29,8 +29,8 @@ typedef struct _chunk_t {
 typedef struct {
   bool initialized;
   unsigned int pages;
-  unsigned int blocks;
-  chunk_t *last_block;
+  unsigned int chunks;
+  chunk_t *last_chunk;
   uint8_t *data;
 } heap_t;
 
@@ -45,7 +45,7 @@ void _free(void *memblock);
 
 static void lock_heap(void);
 static void unlock_heap(void);
-static void *find_block(size_t size);
+static void *find_chunk(size_t size);
 static chunk_t *split_chunk(chunk_t *chunk, size_t size);
 static void coalesce_right(chunk_t *chunk);
 static void use_chunk(chunk_t *chunk, size_t count);

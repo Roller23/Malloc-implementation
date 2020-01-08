@@ -30,21 +30,21 @@ static int __attribute__((constructor)) heap_setup(void) {
   if (heap.data == SBRK_FAIL) {
     return -1;
   }
-  chunk_t first_block;
-  memset(&first_block, 0, sizeof(first_block));
-  first_block.free = true;
-  first_block.size = (PAGE_SIZE * heap.pages) - HEADER_SIZE;
-  first_block.next = first_block.prev = NULL;
-  memcpy(heap.data, &first_block, sizeof(first_block));
-  heap.last_block = firstblock();
+  chunk_t first_chunk;
+  memset(&first_chunk, 0, sizeof(first_chunk));
+  first_chunk.free = true;
+  first_chunk.size = (PAGE_SIZE * heap.pages) - HEADER_SIZE;
+  first_chunk.next = first_chunk.prev = NULL;
+  memcpy(heap.data, &first_chunk, sizeof(first_chunk));
+  heap.last_chunk = firstchunk();
   pthread_mutex_init(&heap_mutex, NULL);
   heap.initialized = true;
-  heap.blocks++;
+  heap.chunks++;
   return 0;
 }
 
-static void *find_block(size_t size) {
-  chunk_t *current = firstblock();
+static void *find_chunk(size_t size) {
+  chunk_t *current = firstchunk();
   while (current) {
     if (current->free && (current->size == size || current->size > (size + HEADER_SIZE))) {
       //it's either a perfect match or enough space for HEADER SIZE + size and some data
@@ -56,36 +56,36 @@ static void *find_block(size_t size) {
 }
 
 static chunk_t *split_chunk(chunk_t *chunk, size_t size) {
-  bool change_last_block = chunk->next == NULL;
+  bool change_last_chunk = chunk->next == NULL;
   size_t newsize = chunk->size - size - HEADER_SIZE;
-  chunk_t newblock = {.size = newsize, .free = true};
-  chunk_t *new_block_next = chunk->next;
+  chunk_t newchunk = {.size = newsize, .free = true};
+  chunk_t *new_chunk_next = chunk->next;
   chunk->size = size;
-  newblock.prev = chunk;
-  newblock.next = chunk->next;
-  chunk_t *new_block_ptr = nextblock(chunk);
-  chunk->next = new_block_ptr;
-  memcpy(new_block_ptr, &newblock, sizeof(chunk_t));
-  if (new_block_next != NULL) {
-    new_block_next->prev = new_block_ptr;
+  newchunk.prev = chunk;
+  newchunk.next = chunk->next;
+  chunk_t *new_chunk_ptr = nextchunk(chunk);
+  chunk->next = new_chunk_ptr;
+  memcpy(new_chunk_ptr, &newchunk, sizeof(chunk_t));
+  if (new_chunk_next != NULL) {
+    new_chunk_next->prev = new_chunk_ptr;
   }
-  if (change_last_block) {
-    heap.last_block = new_block_ptr;
+  if (change_last_chunk) {
+    heap.last_chunk = new_chunk_ptr;
   }
-  heap.blocks++;
+  heap.chunks++;
   return chunk;
 }
 
 static void coalesce_right(chunk_t *chunk) {
   chunk_t *right = chunk->next;
-  bool change_last_block = right->next == NULL;
+  bool change_last_chunk = right->next == NULL;
   chunk->size += right->size + HEADER_SIZE;
   chunk->next = right->next;
   if (chunk->next != NULL) {
     chunk->next->prev = chunk;
   }
-  if (change_last_block) {
-    heap.last_block = chunk;
+  if (change_last_chunk) {
+    heap.last_chunk = chunk;
   }
 }
 
@@ -95,32 +95,32 @@ void _free(void *memblock) {
     unlock_heap();
     return;
   }
-  chunk_t *chunk = mem2block(memblock);
+  chunk_t *chunk = mem2chunk(memblock);
   chunk->free = true;
-  chunk_t *left_block = chunk->prev;
-  chunk_t *right_block = chunk->next;
-  if (right_block != NULL && right_block->free) {
+  chunk_t *left_chunk = chunk->prev;
+  chunk_t *right_chunk = chunk->next;
+  if (right_chunk != NULL && right_chunk->free) {
     coalesce_right(chunk);
-    heap.blocks--;
+    heap.chunks--;
   }
-  if (left_block != NULL && left_block->free) {
-    coalesce_right(left_block);
-    heap.blocks--;
+  if (left_chunk != NULL && left_chunk->free) {
+    coalesce_right(left_chunk);
+    heap.chunks--;
   }
-  if (heap.last_block->free) {
+  if (heap.last_chunk->free) {
     //release the memory to the OS
-    size_t memory = heap.last_block->size + HEADER_SIZE;
-    heap.last_block = heap.last_block->prev;
-    if (heap.last_block != NULL) {
-      heap.last_block->next = NULL;
+    size_t memory = heap.last_chunk->size + HEADER_SIZE;
+    heap.last_chunk = heap.last_chunk->prev;
+    if (heap.last_chunk != NULL) {
+      heap.last_chunk->next = NULL;
     }
-    heap.blocks--;
+    heap.chunks--;
     sbrk(-memory);
   }
   unlock_heap();
 }
 
-static void use_block(chunk_t *chunk, size_t size) {
+static void use_chunk(chunk_t *chunk, size_t size) {
   if (chunk->size > (size + HEADER_SIZE)) {
     chunk = split_chunk(chunk, size);
   }
@@ -137,11 +137,11 @@ void *_malloc(size_t size) {
     unlock_heap();
     return NULL;
   }
-  chunk_t *free_block = find_block(size);
-  if (free_block != NULL) {
-    use_block(free_block, size);
+  chunk_t *free_chunk = find_chunk(size);
+  if (free_chunk != NULL) {
+    use_chunk(free_chunk, size);
     unlock_heap();
-    return block2mem(free_block);
+    return chunk2mem(free_chunk);
   }
   intptr_t mem = get_page_multiple(size + HEADER_SIZE);
   if (sbrk(mem) == SBRK_FAIL) {
@@ -150,25 +150,25 @@ void *_malloc(size_t size) {
   }
   int requested_pages = mem / PAGE_SIZE;
   heap.pages += requested_pages;
-  if (heap.last_block->free) {
-    heap.last_block->size += mem;
-    chunk_t *selected_block = heap.last_block;
-    use_block(selected_block, size);
+  if (heap.last_chunk->free) {
+    heap.last_chunk->size += mem;
+    chunk_t *selected_chunk = heap.last_chunk;
+    use_chunk(selected_chunk, size);
     unlock_heap();
-    return block2mem(selected_block);
+    return chunk2mem(selected_chunk);
   }
   chunk_t chunk = {.size = mem - HEADER_SIZE, .free = true};
-  chunk_t *old_last_block = heap.last_block;
-  chunk_t *new_last_block = nextblock(old_last_block);
-  memcpy(new_last_block, &chunk, sizeof(chunk));
-  heap.last_block = new_last_block;
-  new_last_block->prev = old_last_block;
-  new_last_block->next = NULL;
-  old_last_block->next = new_last_block;
-  heap.blocks++;
-  use_block(new_last_block, size);
+  chunk_t *old_last_chunk = heap.last_chunk;
+  chunk_t *new_last_chunk = nextchunk(old_last_chunk);
+  memcpy(new_last_chunk, &chunk, sizeof(chunk));
+  heap.last_chunk = new_last_chunk;
+  new_last_chunk->prev = old_last_chunk;
+  new_last_chunk->next = NULL;
+  old_last_chunk->next = new_last_chunk;
+  heap.chunks++;
+  use_chunk(new_last_chunk, size);
   unlock_heap();
-  return block2mem(new_last_block);
+  return chunk2mem(new_last_chunk);
 }
 
 void *_calloc(size_t n, size_t size) {
@@ -198,17 +198,17 @@ void *_realloc(void *memblock, size_t size) {
     _free(memblock);
     return NULL;
   }
-  chunk_t *block = mem2block(memblock);
-  if (block->size == size) {
+  chunk_t *chunk = mem2chunk(memblock);
+  if (chunk->size == size) {
     return memblock;
   }
   void *new_usermem = _malloc(size);
   if (new_usermem == NULL) {
     return NULL;
   }
-  chunk_t *new_block = mem2block(new_usermem);
+  chunk_t *new_chunk = mem2chunk(new_usermem);
   lock_heap();
-  size_t to_copy = MIN(block->size, new_block->size);
+  size_t to_copy = MIN(chunk->size, new_chunk->size);
   memcpy(new_usermem, memblock, to_copy);
   unlock_heap();
   _free(memblock);
