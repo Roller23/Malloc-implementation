@@ -1,5 +1,4 @@
 #include "_malloc.h"
-#include <unistd.h>
 
 static pthread_mutex_t heap_mutex;
 static heap_t heap;
@@ -13,34 +12,18 @@ static void unlock_heap(void) {
 }
 
 static void __attribute__((destructor)) heap_destroy(void) {
-  if (!heap.initialized) {
-    return;
-  }
   pthread_mutex_destroy(&heap_mutex);
-  heap.initialized = false;
 }
 
-static int __attribute__((constructor)) heap_setup(void) {
-  if (heap.initialized) {
-    return 0;
-  }
+static void __attribute__((constructor)) heap_setup(void) {
   memset(&heap, 0, sizeof(heap));
-  heap.pages = HEAP_INITIAL_PAGES;
-  heap.data = sbrk(PAGE_SIZE * heap.pages);
-  if (heap.data == SBRK_FAIL) {
-    return -1;
-  }
-  chunk_t first_chunk;
-  memset(&first_chunk, 0, sizeof(first_chunk));
-  first_chunk.free = true;
-  first_chunk.size = (PAGE_SIZE * heap.pages) - HEADER_SIZE;
-  first_chunk.next = first_chunk.prev = NULL;
-  memcpy(heap.data, &first_chunk, sizeof(first_chunk));
+  heap.data = sbrk(PAGE_SIZE * HEAP_INITIAL_PAGES);
+  chunk_t *first_chunk = (chunk_t *)heap.data;
+  first_chunk->free = true;
+  first_chunk->size = (PAGE_SIZE * HEAP_INITIAL_PAGES) - HEADER_SIZE;
+  first_chunk->next = first_chunk->prev = NULL;
   heap.last_chunk = firstchunk();
   pthread_mutex_init(&heap_mutex, NULL);
-  heap.initialized = true;
-  heap.chunks++;
-  return 0;
 }
 
 static void *find_chunk(size_t size) {
@@ -56,23 +39,22 @@ static void *find_chunk(size_t size) {
 }
 
 static chunk_t *split_chunk(chunk_t *chunk, size_t size) {
-  bool change_last_chunk = chunk->next == NULL;
+  bool change_last_chunk = (chunk->next == NULL);
   size_t newsize = chunk->size - size - HEADER_SIZE;
-  chunk_t newchunk = {.size = newsize, .free = true};
+  chunk_t new_chunk = {.size = newsize, .free = true};
   chunk_t *new_chunk_next = chunk->next;
   chunk->size = size;
-  newchunk.prev = chunk;
-  newchunk.next = chunk->next;
+  new_chunk.prev = chunk;
+  new_chunk.next = chunk->next;
   chunk_t *new_chunk_ptr = nextchunk(chunk);
   chunk->next = new_chunk_ptr;
-  memcpy(new_chunk_ptr, &newchunk, sizeof(chunk_t));
+  memcpy(new_chunk_ptr, &new_chunk, sizeof(chunk_t));
   if (new_chunk_next != NULL) {
     new_chunk_next->prev = new_chunk_ptr;
   }
   if (change_last_chunk) {
     heap.last_chunk = new_chunk_ptr;
   }
-  heap.chunks++;
   return chunk;
 }
 
@@ -101,11 +83,9 @@ void _free(void *memblock) {
   chunk_t *right_chunk = chunk->next;
   if (right_chunk != NULL && right_chunk->free) {
     coalesce_right(chunk);
-    heap.chunks--;
   }
   if (left_chunk != NULL && left_chunk->free) {
     coalesce_right(left_chunk);
-    heap.chunks--;
   }
   if (heap.last_chunk->free) {
     //release the memory to the OS
@@ -114,7 +94,6 @@ void _free(void *memblock) {
     if (heap.last_chunk != NULL) {
       heap.last_chunk->next = NULL;
     }
-    heap.chunks--;
     sbrk(-memory);
   }
   unlock_heap();
@@ -125,11 +104,12 @@ static void use_chunk(chunk_t *chunk, size_t size) {
     chunk = split_chunk(chunk, size);
   }
   chunk->free = false;
+  chunk->size = size;
 }
 
-void *_malloc(size_t size) {
+void *_malloc(uint32_t size) {
   if (size + HEADER_SIZE < size) {
-    // unsigned overflow
+    // unsigned integer overflow
     return NULL;
   }
   lock_heap();
@@ -148,8 +128,6 @@ void *_malloc(size_t size) {
     unlock_heap();
     return NULL;
   }
-  int requested_pages = mem / PAGE_SIZE;
-  heap.pages += requested_pages;
   if (heap.last_chunk->free) {
     heap.last_chunk->size += mem;
     chunk_t *selected_chunk = heap.last_chunk;
@@ -165,13 +143,12 @@ void *_malloc(size_t size) {
   new_last_chunk->prev = old_last_chunk;
   new_last_chunk->next = NULL;
   old_last_chunk->next = new_last_chunk;
-  heap.chunks++;
   use_chunk(new_last_chunk, size);
   unlock_heap();
   return chunk2mem(new_last_chunk);
 }
 
-void *_calloc(size_t n, size_t size) {
+void *_calloc(uint32_t n, uint32_t size) {
   if (size == 0) {
     return NULL;
   }
@@ -190,7 +167,7 @@ void *_calloc(size_t n, size_t size) {
   return memory;
 }
 
-void *_realloc(void *memblock, size_t size) {
+void *_realloc(void *memblock, uint32_t size) {
   if (memblock == NULL) {
     return _malloc(size);
   }

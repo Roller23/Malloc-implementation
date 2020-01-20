@@ -1,11 +1,11 @@
-#ifndef __ALLOCATOR_
-#define __ALLOCATOR_
+#ifndef __MALLOC_
+#define __MALLOC_
 
-#include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 #include <pthread.h>
 #include <stdbool.h>
+#include <unistd.h>
 
 #define HEAP_INITIAL_PAGES 2
 #define KB 1024
@@ -27,19 +27,13 @@ typedef struct _chunk_t {
 } chunk_t;
 
 typedef struct {
-  bool initialized;
-  unsigned int pages;
-  unsigned int chunks;
   chunk_t *last_chunk;
   uint8_t *data;
 } heap_t;
 
 // malloc API
 
-void *_malloc(size_t size);
-void *_calloc(size_t n, size_t size);
-void *_realloc(void *memblock, size_t size);
-void _free(void *memblock);
+#include "allocator.h"
 
 // internal functions
 
@@ -51,4 +45,4 @@ static void coalesce_right(chunk_t *chunk);
 static void use_chunk(chunk_t *chunk, size_t count);
 static intptr_t get_page_multiple(intptr_t size);
 
-#endif // __ALLOCATOR_
+#endif // __MALLOC_
