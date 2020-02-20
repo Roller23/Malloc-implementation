@@ -29,6 +29,7 @@ typedef struct _chunk_t {
 typedef struct {
   chunk_t *last_chunk;
   uint8_t *data;
+  pthread_mutex_t mutex;
 } heap_t;
 
 // malloc API

@@ -1,18 +1,17 @@
 #include "_malloc.h"
 
-static pthread_mutex_t heap_mutex;
 static heap_t heap;
 
 static void lock_heap(void) {
-  pthread_mutex_lock(&heap_mutex);
+  pthread_mutex_lock(&heap.mutex);
 }
 
 static void unlock_heap(void) {
-  pthread_mutex_unlock(&heap_mutex);
+  pthread_mutex_unlock(&heap.mutex);
 }
 
 static void __attribute__((destructor)) heap_destroy(void) {
-  pthread_mutex_destroy(&heap_mutex);
+  pthread_mutex_destroy(&heap.mutex);
 }
 
 static void __attribute__((constructor)) heap_setup(void) {
@@ -23,7 +22,7 @@ static void __attribute__((constructor)) heap_setup(void) {
   first_chunk->size = (PAGE_SIZE * HEAP_INITIAL_PAGES) - HEADER_SIZE;
   first_chunk->next = first_chunk->prev = NULL;
   heap.last_chunk = firstchunk();
-  pthread_mutex_init(&heap_mutex, NULL);
+  pthread_mutex_init(&heap.mutex, NULL);
 }
 
 static void *find_chunk(size_t size) {
