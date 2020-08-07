@@ -1,18 +1,17 @@
 #include "_malloc.h"
 
-static pthread_mutex_t heap_mutex;
 static heap_t heap;
 
-static void lock_heap(void) {
-  pthread_mutex_lock(&heap_mutex);
+static inline void lock_heap(void) {
+  pthread_mutex_lock(&heap.mutex);
 }
 
-static void unlock_heap(void) {
-  pthread_mutex_unlock(&heap_mutex);
+static inline void unlock_heap(void) {
+  pthread_mutex_unlock(&heap.mutex);
 }
 
 static void __attribute__((destructor)) heap_destroy(void) {
-  pthread_mutex_destroy(&heap_mutex);
+  pthread_mutex_destroy(&heap.mutex);
 }
 
 static void __attribute__((constructor)) heap_setup(void) {
@@ -23,14 +22,14 @@ static void __attribute__((constructor)) heap_setup(void) {
   first_chunk->size = (PAGE_SIZE * HEAP_INITIAL_PAGES) - HEADER_SIZE;
   first_chunk->next = first_chunk->prev = NULL;
   heap.last_chunk = firstchunk();
-  pthread_mutex_init(&heap_mutex, NULL);
+  pthread_mutex_init(&heap.mutex, NULL);
 }
 
 static void *find_chunk(size_t size) {
   chunk_t *current = firstchunk();
   while (current) {
     if (current->free && (current->size == size || current->size > (size + HEADER_SIZE))) {
-      //it's either a perfect match or enough space for HEADER SIZE + size and some data
+      // it's either a perfect match or enough space for HEADER SIZE + size and some data
       return current;
     }
     current = current->next;
@@ -88,7 +87,7 @@ void _free(void *memblock) {
     coalesce_right(left_chunk);
   }
   if (heap.last_chunk->free) {
-    //release the memory to the OS
+    // release the memory to the OS
     size_t memory = heap.last_chunk->size + HEADER_SIZE;
     heap.last_chunk = heap.last_chunk->prev;
     if (heap.last_chunk != NULL) {
